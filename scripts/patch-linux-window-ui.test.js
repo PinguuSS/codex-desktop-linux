@@ -15,6 +15,9 @@ const {
   applyLinuxComputerUseInstallFlowPatch,
   applyLinuxComputerUsePluginGatePatch,
   applyLinuxComputerUseRendererAvailabilityPatch,
+  applyCopilotReasoningEffortModelListPatch,
+  applyCopilotReasoningEffortSettingsPatch,
+  applyCopilotReasoningEffortUiPatch,
   applyBrowserUseNodeReplApprovalPatch,
   applyLinuxAppUpdaterBridgePatch,
   applyLinuxAppUpdaterMenuPatch,
@@ -109,6 +112,24 @@ function computerUseRendererAvailabilityBundleFixture() {
 
 function computerUseInstallFlowBundleFixture() {
   return "function Qe({forceReloadPlugins:e,hostId:t}){let ne=f({featureName:`computer_use`,hostId:t}),re=!ne.isLoading&&ne.enabled,[L,R]=(0,Z.useState)({});return re}";
+}
+
+function copilotReasoningEffortSettingsFixture() {
+  return [
+    "function bwe(){let e=(0,Y.c)(3),t=wr(),{data:n,isLoading:r}=or(`copilot-default-model`),i=n??t.defaultModel,a;return e[0]!==r||e[1]!==i?(a={model:i,reasoningEffort:`medium`,profile:null,isLoading:r},e[0]=r,e[1]=i,e[2]=a):a=e[2],a}",
+    "function $9(e=null){let t=j(fe),m=a?.authMethod===`copilot`,g=(0,q.useCallback)(async(t,n)=>!1,[]),c={profile:null},i=!0,r=`local`,s=`/tmp`,v=()=>{},y=()=>{};return{setModelAndReasoningEffort:(0,q.useCallback)(async(e,n)=>{try{if(await g(e,n))return;if(m){Jn(t,`copilot-default-model`,e);return}if(h.info(`Setting default model and reasoning effort`,{safe:{newModel:e,newEffort:n,profile:c.profile}}),!i)return;await Gt(`set-default-model-config-for-host`,{hostId:r,model:e,reasoningEffort:n,profile:c.profile}),await v(),await t.query.fetch(Ss,{hostId:r,cwd:s})}catch(e){y(e)}},[m,g,c.profile,v,i,r,t,y,s])}}",
+  ].join("");
+}
+
+function copilotReasoningEffortModelListFixture() {
+  return "function Ge(){let s=`copilot`,d={};return e.forEach(e=>{let t=s===`copilot`?[e.supportedReasoningEfforts.find(Ue)??{reasoningEffort:`medium`,description:`medium effort`}]:[...e.supportedReasoningEfforts];d.models.push({...e,supportedReasoningEfforts:t})})}";
+}
+
+function copilotReasoningEffortUiFixture() {
+  return [
+    "function qU(){let E=o?.authMethod===`copilot`,D=ZH(T,f.model),O=QH(f.reasoningEffort,D),le=D.map(e=>{let{reasoningEffort:t}=e;return(0,$.jsx)(jm.Item,{\"data-reasoning-selected\":t===O?`true`:void 0,disabled:E,RightIcon:t===O?rg:void 0,onSelect:()=>{i.get(bh).log({eventName:`codex_composer_reasoning_effort_changed`,metadata:{reasoning_effort:t}}),p(f.model,t),H()},children:(0,$.jsx)(nM,{effort:t})},t)})}",
+    "function bY(e){let p=o?.authMethod===`copilot`;let w=s&&f&&!p,T;return{enabled:w,dependencies:T}}",
+  ].join("");
 }
 
 function currentLaunchActionBundleFixture() {
@@ -759,6 +780,46 @@ test("allows Computer Use install flow on Linux", () => {
     patched,
     /re=!ne\.isLoading&&ne\.enabled\|\|navigator\.userAgent\.includes\(`Linux`\)/,
   );
+});
+
+test("persists Copilot reasoning effort with the default Copilot model", () => {
+  const patched = applyPatchTwice(
+    applyCopilotReasoningEffortSettingsPatch,
+    copilotReasoningEffortSettingsFixture(),
+  );
+
+  assert.match(patched, /or\(`copilot-default-reasoning-effort`\)/);
+  assert.match(patched, /reasoningEffort:codexCopilotReasoningEffortValue/);
+  assert.match(patched, /isLoading:r\|\|codexCopilotReasoningEffortLoading/);
+  assert.match(
+    patched,
+    /Jn\(t,`copilot-default-model`,e\),Jn\(t,`copilot-default-reasoning-effort`,n\);return/,
+  );
+  assert.doesNotMatch(patched, /reasoningEffort:`medium`,profile:null,isLoading:r/);
+  assert.doesNotMatch(patched, /Jn\(t,`copilot-default-model`,e\);return/);
+});
+
+test("keeps all model reasoning efforts available for Copilot auth", () => {
+  const patched = applyPatchTwice(
+    applyCopilotReasoningEffortModelListPatch,
+    copilotReasoningEffortModelListFixture(),
+  );
+
+  assert.match(patched, /let t=\[\.\.\.e\.supportedReasoningEfforts\]/);
+  assert.doesNotMatch(patched, /s===`copilot`\?\[/);
+  assert.doesNotMatch(patched, /description:`medium effort`/);
+});
+
+test("allows Copilot auth to change reasoning effort from the UI", () => {
+  const patched = applyPatchTwice(
+    applyCopilotReasoningEffortUiPatch,
+    copilotReasoningEffortUiFixture(),
+  );
+
+  assert.match(patched, /disabled:!1,RightIcon:t===O\?rg:void 0/);
+  assert.match(patched, /let w=s&&f,T;/);
+  assert.doesNotMatch(patched, /disabled:E,RightIcon:t===O\?rg:void 0/);
+  assert.doesNotMatch(patched, /let w=s&&f&&!p,T;/);
 });
 
 test("auto-approves the app-provided Browser Use node_repl bridge", () => {
