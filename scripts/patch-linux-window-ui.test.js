@@ -19,6 +19,7 @@ const {
   applyLinuxAppUpdaterBridgePatch,
   applyLinuxAppUpdaterMenuPatch,
   applyLinuxFileManagerPatch,
+  applyLinuxGitOriginsSourceFallbackPatch,
   applyLinuxQuitGuardPatch,
   applyLinuxHotkeyWindowPrewarmPatch,
   applyLinuxLaunchActionArgsPatch,
@@ -998,6 +999,19 @@ test("patchMainBundleSource keeps non-icon patches active without an icon asset"
     patched,
     /nativeImage\.createFromPath\(process\.resourcesPath\+`\/\.\.\/content\/webview\/assets\//,
   );
+});
+
+test("adds a fallback source for renderer git-origins requests without weakening other git operations", () => {
+  const source =
+    "handleVSCodeRequest(n,r,i,a,o){try{let s=r,c=this.handlers[s];if(typeof c!=`function`)throw Error(`${r} not implemented in the current Electron process. Restart Codex to load the latest Electron handlers.`);let l=()=>c({...a,origin:n,windowHostId:i});if(o==null){if(e.qt(r))throw Error(`Missing git operation source for ${r}`);return l()}return t.Gt({source:o,requestKind:r},l)}catch(e){throw e}}";
+
+  const patched = applyPatchTwice(applyLinuxGitOriginsSourceFallbackPatch, source);
+
+  assert.match(
+    patched,
+    /if\(r===`git-origins`\)return t\.Gt\(\{source:`linux_git_origins_missing_source_fallback`,requestKind:r\},l\)/,
+  );
+  assert.match(patched, /throw Error\(`Missing git operation source for \$\{r\}`\)/);
 });
 
 test("missing icon asset skips only icon patches", () => {

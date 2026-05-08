@@ -1740,6 +1740,41 @@ function applyLinuxHotkeyWindowPrewarmPatch(currentSource) {
   return patchedSource;
 }
 
+function applyLinuxGitOriginsSourceFallbackPatch(currentSource) {
+  const fallbackSource = "linux_git_origins_missing_source_fallback";
+  if (currentSource.includes(`source:\`${fallbackSource}\`,requestKind:`)) {
+    return currentSource;
+  }
+
+  const exactNeedle =
+    "if(o==null){if(e.qt(r))throw Error(`Missing git operation source for ${r}`);return l()}return t.Gt({source:o,requestKind:r},l)";
+  const exactReplacement =
+    `if(o==null){if(e.qt(r)){if(r===\`git-origins\`)return t.Gt({source:\`${fallbackSource}\`,requestKind:r},l);throw Error(\`Missing git operation source for \${r}\`)}return l()}return t.Gt({source:o,requestKind:r},l)`;
+  if (currentSource.includes(exactNeedle)) {
+    return currentSource.replace(exactNeedle, exactReplacement);
+  }
+
+  const dynamicRegex =
+    /if\(([A-Za-z_$][\w$]*)==null\)\{if\(([A-Za-z_$][\w$]*)\.qt\(([A-Za-z_$][\w$]*)\)\)throw Error\(`Missing git operation source for \$\{\3\}`\);return ([A-Za-z_$][\w$]*)\(\)\}return ([A-Za-z_$][\w$]*)\.Gt\(\{source:\1,requestKind:\3\},\4\)/;
+  const dynamicMatch = currentSource.match(dynamicRegex);
+  if (dynamicMatch != null) {
+    const [, sourceVar, gitGuardVar, requestKindVar, callVar, operationContextVar] = dynamicMatch;
+    return currentSource.replace(
+      dynamicRegex,
+      `if(${sourceVar}==null){if(${gitGuardVar}.qt(${requestKindVar})){if(${requestKindVar}===\`git-origins\`)return ${operationContextVar}.Gt({source:\`${fallbackSource}\`,requestKind:${requestKindVar}},${callVar});throw Error(\`Missing git operation source for \${${requestKindVar}}\`)}return ${callVar}()}return ${operationContextVar}.Gt({source:${sourceVar},requestKind:${requestKindVar}},${callVar})`,
+    );
+  }
+
+  if (
+    currentSource.includes("Missing git operation source for") &&
+    currentSource.includes("\"git-origins\":")
+  ) {
+    console.warn("WARN: Could not find git operation source guard — skipping git-origins fallback patch");
+  }
+
+  return currentSource;
+}
+
 
 function patchMainBundleSource(source, iconAsset) {
   let patched = source;
@@ -1764,6 +1799,7 @@ function patchMainBundleSource(source, iconAsset) {
   patched = applyLinuxSettingsPersistencePatch(patched);
   patched = applyLinuxLaunchActionArgsPatch(patched);
   patched = applyLinuxHotkeyWindowPrewarmPatch(patched);
+  patched = applyLinuxGitOriginsSourceFallbackPatch(patched);
   return patched;
 }
 
@@ -2027,6 +2063,7 @@ module.exports = {
   applyLinuxAppUpdaterMenuPatch,
   patchLinuxAppUpdaterBridge,
   applyLinuxFileManagerPatch,
+  applyLinuxGitOriginsSourceFallbackPatch,
   applyLinuxHotkeyWindowPrewarmPatch,
   applyLinuxQuitGuardPatch,
   isComputerUseUiEnabled,
