@@ -12,6 +12,11 @@ const {
   loadLinuxFeatureMainBundlePatches,
 } = require("./lib/linux-features.js");
 const {
+  detectLinuxTargetContext,
+  linuxTargetSummary,
+  parseOsRelease,
+} = require("./lib/linux-target-context.js");
+const {
   applyLinuxAppUpdaterBridgePatch,
   applyLinuxAppUpdaterMenuPatch,
   patchLinuxAppUpdaterBridge,
@@ -68,6 +73,13 @@ const {
   resolveDesktopName,
 } = require("./patches/package-json.js");
 const {
+  discoverCorePatchDescriptors,
+  normalizePatchDescriptors,
+} = require("./patches/engine.js");
+const {
+  corePatchDescriptors,
+  createMainBundleContext,
+  legacyCorePatchDescriptors,
   patchExtractedApp,
   patchMainBundleSource,
 } = require("./patches/registry.js");
@@ -155,11 +167,19 @@ module.exports = {
   applyLinuxWillQuitDrainTimeoutPatch,
   applyLinuxWindowOptionsPatch,
   createPatchReport,
+  corePatchDescriptors,
+  createMainBundleContext,
+  detectLinuxTargetContext,
+  discoverCorePatchDescriptors,
   enabledLinuxFeatureIds,
   enabledLinuxFeatureStageHooks,
   isComputerUseUiEnabled,
+  legacyCorePatchDescriptors,
+  linuxTargetSummary,
   loadEnabledLinuxFeatures,
   loadLinuxFeatureMainBundlePatches,
+  normalizePatchDescriptors,
+  parseOsRelease,
   patchCommentPreloadBundle,
   patchExtractedApp,
   patchKeybindsSettingsAssets,

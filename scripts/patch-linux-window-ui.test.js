@@ -45,6 +45,12 @@ const {
   patchPackageJson,
   patchLinuxAppUpdaterBridge,
   createPatchReport,
+  corePatchDescriptors,
+  detectLinuxTargetContext,
+  discoverCorePatchDescriptors,
+  linuxTargetSummary,
+  normalizePatchDescriptors,
+  parseOsRelease,
   resolveDesktopName,
 } = require("./patch-linux-window-ui.js");
 const {
@@ -81,6 +87,198 @@ function captureWarns(fn) {
     console.warn = originalWarn;
   }
 }
+
+test("Linux target context parses distro, package, and desktop details", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-linux-target-"));
+  try {
+    const osReleasePath = path.join(tempRoot, "os-release");
+    fs.writeFileSync(
+      osReleasePath,
+      [
+        "ID=ubuntu",
+        "ID_LIKE=\"debian\"",
+        "VERSION_ID=\"24.04\"",
+        "PRETTY_NAME=\"Ubuntu 24.04 LTS\"",
+      ].join("\n"),
+    );
+
+    const target = detectLinuxTargetContext({
+      env: {
+        OS_RELEASE_FILE: osReleasePath,
+        PATH: "",
+        XDG_CURRENT_DESKTOP: "KDE:GNOME",
+        XDG_SESSION_TYPE: "wayland",
+        WAYLAND_DISPLAY: "wayland-0",
+      },
+    });
+
+    assert.deepEqual(parseOsRelease(fs.readFileSync(osReleasePath, "utf8")).ID_LIKE, "debian");
+    assert.equal(target.distro.id, "ubuntu");
+    assert.deepEqual(target.distro.idLike, ["debian"]);
+    assert.equal(target.distro.versionMajor, 24);
+    assert.equal(target.packageFormat, "deb");
+    assert.equal(target.packageManager, "apt");
+    assert.equal(target.matchesId("debian"), true);
+    assert.equal(target.matchesId(["ubuntu", "fedora"]), true);
+    assert.equal(target.packageFormatIs("deb"), true);
+    assert.equal(target.desktopMatches("kde"), true);
+    assert.equal(target.desktopMatches(["plasma", "gnome"]), true);
+    assert.equal(target.versionAtLeast("24.04"), true);
+    assert.equal(target.versionAtLeast("24.10"), false);
+    assert.equal(target.wayland, true);
+    assert.match(linuxTargetSummary(target), /^ubuntu:24\.04\/deb:/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("auto-discovered core patches can target a specific Linux distro", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-core-patch-root-"));
+  try {
+    const patchDir = path.join(tempRoot, "gentoo", "sample");
+    fs.mkdirSync(patchDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(patchDir, "patch.js"),
+      [
+        "\"use strict\";",
+        "module.exports = {",
+        "  id: \"gentoo-only-sample\",",
+        "  phase: \"main-bundle\",",
+        "  ciPolicy: \"required-upstream\",",
+        "  order: 30000,",
+        "  appliesTo: (context) => context.linux.matchesId(\"gentoo\"),",
+        "  apply: (source) => source.replace(\"codexLinuxGentooDisabled()\", \"codexLinuxGentooEnabled()\"),",
+        "};",
+      ].join("\n"),
+    );
+
+    const descriptors = discoverCorePatchDescriptors({ root: tempRoot });
+    assert.equal(descriptors.length, 1);
+    assert.equal(descriptors[0].id, "gentoo-only-sample");
+
+    const gentoo = detectLinuxTargetContext({
+      env: {
+        CODEX_LINUX_TARGET_ID: "gentoo",
+        CODEX_LINUX_TARGET_PACKAGE_FORMAT: "unknown",
+        PATH: "",
+      },
+    });
+    const ubuntu = detectLinuxTargetContext({
+      env: {
+        CODEX_LINUX_TARGET_ID: "ubuntu",
+        CODEX_LINUX_TARGET_ID_LIKE: "debian",
+        PATH: "",
+      },
+    });
+
+    assert.match(
+      captureWarns(() =>
+        patchMainBundleSource("codexLinuxGentooDisabled()", null, {
+          corePatchRoot: tempRoot,
+          linuxTarget: gentoo,
+        }),
+      ).value,
+      /codexLinuxGentooEnabled/,
+    );
+    assert.doesNotMatch(
+      captureWarns(() =>
+        patchMainBundleSource("codexLinuxGentooDisabled()", null, {
+          corePatchRoot: tempRoot,
+          linuxTarget: ubuntu,
+        }),
+      ).value,
+      /codexLinuxGentooEnabled/,
+    );
+
+    const tempApp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-skipped-target-report-"));
+    try {
+      const buildDir = path.join(tempApp, ".vite", "build");
+      fs.mkdirSync(buildDir, { recursive: true });
+      fs.writeFileSync(path.join(buildDir, "main.js"), "codexLinuxGentooDisabled()");
+      const report = createPatchReport();
+      captureWarns(() =>
+        patchExtractedApp(tempApp, {
+          report,
+          corePatchRoot: tempRoot,
+          linuxTarget: ubuntu,
+        }),
+      );
+      assert.equal(
+        report.patches.find((patch) => patch.name === "gentoo-only-sample")?.status,
+        "skipped-target",
+      );
+      assert.equal(report.linuxTarget.distro.id, "ubuntu");
+    } finally {
+      fs.rmSync(tempApp, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("patch descriptor normalization rejects duplicate ids", () => {
+  assert.throws(
+    () => normalizePatchDescriptors([
+      { id: "duplicate", apply: (source) => source },
+      { id: "duplicate", apply: (source) => source },
+    ]),
+    /Duplicate patch descriptor id 'duplicate'/,
+  );
+});
+
+test("default core patch descriptors are grouped and unique", () => {
+  const descriptors = corePatchDescriptors();
+  const ids = descriptors.map((descriptor) => descriptor.id);
+  const expectedIds = [
+    "linux-quit-guard",
+    "linux-explicit-quit-prompt-bypass",
+    "linux-explicit-quit-drain-timeout",
+    "linux-explicit-tray-quit",
+    "linux-explicit-ipc-quit",
+    "linux-window-options",
+    "linux-menu",
+    "linux-set-icon",
+    "linux-opaque-background",
+    "linux-avatar-overlay-mouse-passthrough",
+    "linux-file-manager",
+    "linux-tray",
+    "linux-single-instance",
+    "linux-computer-use-ui-feature",
+    "linux-computer-use-plugin-gate",
+    "linux-chrome-plugin-auto-install",
+    "browser-use-node-repl-approval",
+    "linux-browser-use-iab-visible-on-create",
+    "linux-chrome-extension-status",
+    "linux-app-updater-menu",
+    "linux-tray-close-setting",
+    "linux-settings-persistence",
+    "linux-launch-actions",
+    "linux-hotkey-window-prewarm",
+    "linux-git-origins-source-fallback",
+    "linux-app-sunset-gate",
+    "opaque-window-default-general-settings",
+    "opaque-window-default-webview-index",
+    "opaque-window-default-resolved-theme",
+    "linux-computer-use-ui-availability",
+    "linux-computer-use-install-flow",
+    "linux-app-updater-bridge",
+    "browser-annotation-screenshot",
+    "keybinds-settings",
+    "package-desktop-name",
+  ];
+
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual([...ids].sort(), [...expectedIds].sort());
+  assert.ok(descriptors.every((descriptor) => descriptor.sourcePath.includes(`${path.sep}core${path.sep}`)));
+  assert.equal(
+    descriptors.find((descriptor) => descriptor.id === "package-desktop-name")?.phase,
+    "extracted-app",
+  );
+  assert.match(
+    descriptors.find((descriptor) => descriptor.id === "linux-chrome-plugin-auto-install")?.sourcePath,
+    /main-process[\\/]browser-integrations[\\/]patch\.js$/,
+  );
+});
 
 function trayBundleFixture() {
   return [

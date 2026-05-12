@@ -86,9 +86,11 @@
           if [ -f "${installDir}/start.sh" ]; then
             ${pkgs.gnused}/bin/sed -i '1s|^#!/bin/bash$|#!${pkgs.bash}/bin/bash|' "${installDir}/start.sh"
             if ! grep -q "NixOS Electron library path" "${installDir}/start.sh"; then
+              # shellcheck disable=SC2016
               ${pkgs.gnused}/bin/sed -i '2i# NixOS Electron library path for dlopen()ed GL/EGL libraries.\nexport LD_LIBRARY_PATH="${electronLibPath}:${runtimeLibPath}:''${LD_LIBRARY_PATH:-}"' "${installDir}/start.sh"
             fi
             if ! grep -q "codex_nixos_add_runtime_library_dirs" "${installDir}/start.sh"; then
+              # shellcheck disable=SC2016
               ${pkgs.gnused}/bin/sed -i '/^set -euo pipefail$/a\
 \
 codex_nixos_add_runtime_library_dirs() {\
@@ -200,7 +202,7 @@ PY
 
           outputHashAlgo = "sha256";
           outputHashMode = "recursive";
-          outputHash = "sha256-UnqbizEDTpNCH1tViVVAKpE8NPBRn5JMy0GfcAhswkw=";
+          outputHash = "sha256-efRH4r4KIIsvAxMyzy2sd+Cezv1N5zKKEWyz+6vMc5Y=";
           unsafeDiscardReferences.out = true;
 
           dontConfigure = true;
@@ -216,6 +218,10 @@ PY
             export npm_config_cafile="$SSL_CERT_FILE"
             export CARGO_HOME="$TMPDIR/cargo-home"
             export CARGO_BUILD_JOBS=1
+            export SOURCE_DATE_EPOCH=1
+            export CFLAGS="''${CFLAGS:-} -ffile-prefix-map=$TMPDIR=/build -fdebug-prefix-map=$TMPDIR=/build -fmacro-prefix-map=$TMPDIR=/build"
+            export CXXFLAGS="''${CXXFLAGS:-} -ffile-prefix-map=$TMPDIR=/build -fdebug-prefix-map=$TMPDIR=/build -fmacro-prefix-map=$TMPDIR=/build"
+            export RUSTFLAGS="''${RUSTFLAGS:-} --remap-path-prefix=$TMPDIR=/build -C link-arg=-Wl,--build-id=none"
             export CODEX_MANAGED_NODE_SOURCE="${pkgs.nodejs}"
             mkdir -p "$HOME" "$npm_config_cache" "$CARGO_HOME"
 
