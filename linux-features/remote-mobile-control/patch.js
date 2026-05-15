@@ -11,12 +11,35 @@ const DEVICE_KEY_GUARD =
   "if(process.platform!==`darwin`)throw Error(`Remote control device keys are only available on macOS`);";
 const DEVICE_KEY_GUARD_REPLACEMENT =
   "if(process.platform===`linux`)return codexLinuxRemoteControlDeviceKeyClient();if(process.platform!==`darwin`)throw Error(`Remote control device keys are only available on macOS`);";
+const DEVICE_KEY_REQUIRE_NEEDLE =
+  /(?:var|let|const)\s+[A-Za-z_$][\w$]*=\(0,[A-Za-z_$][\w$]*\.createRequire\)\(__filename\),[A-Za-z_$][\w$]*=`remote-control-device-key\.node`/u;
 const REMOTE_CONTROL_VISIBILITY_NEEDLE =
   "function a({remoteControlConnectionsState:e,slingshotEnabled:t}){return t&&(e?.available??!0)&&e?.accessRequired!==!0}";
 const REMOTE_CONTROL_VISIBILITY_REPLACEMENT =
   "function a({remoteControlConnectionsState:e,slingshotEnabled:t}){let n=typeof navigator!=`undefined`&&navigator.userAgent.includes(`Linux`);return(n||t)&&(n||(e?.available??!0))&&e?.accessRequired!==!0}";
 const REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT =
   "function a({remoteControlConnectionsState:e,slingshotEnabled:t}){let n=typeof navigator!=`undefined`&&navigator.userAgent.includes(`Linux`);return t&&(n||(e?.available??!0))&&e?.accessRequired!==!0}";
+const REMOTE_CONTROL_SETTINGS_VISIBILITY_NEEDLE =
+  /function ([A-Za-z_$][\w$]*)\(\{remoteControlConnectionsState:([A-Za-z_$][\w$]*),slingshotEnabled:([A-Za-z_$][\w$]*)\}\)\{return \3&&\(\2\?\.available\?\?!0\)\}/u;
+const REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS = [
+  ["defaultMessage:`Mac`", "defaultMessage:`Linux`"],
+  ["Keep this Mac awake", "Keep this Linux desktop awake"],
+  ["Devices that can control this Mac", "Devices that can control this Linux desktop"],
+  ["Control this Mac from your phone or other device", "Control this Linux desktop from your phone or other device"],
+  ["Add device to control this Mac remotely", "Add device to control this Linux desktop remotely"],
+  ["Control other devices from this Mac", "Control other devices from this Linux desktop"],
+  ["Authorize this Mac to control other devices signed in to your ChatGPT account", "Authorize this Linux desktop to control other devices signed in to your ChatGPT account"],
+  ["Allow this Mac to be discovered and controlled", "Allow this Linux desktop to be discovered and controlled"],
+  ["Control this Mac", "Control this Linux desktop"],
+  ["Devices you can control from this Mac", "Devices you can control from this Linux desktop"],
+  ["SSH connections from this Mac", "SSH connections from this Linux desktop"],
+  ["Use your Mac apps while locked", "Use your Linux apps while locked"],
+  ["Control Mac apps from your phone", "Control Linux apps from your phone"],
+  ["Let Codex control the apps on your Mac.", "Let Codex control apps on this Linux desktop."],
+  ["Let Codex control the apps on your Mac", "Let Codex control apps on this Linux desktop"],
+  ["Connect a device to this Mac", "Connect a device to this Linux desktop"],
+  ["Connect your phone to this Mac", "Connect your phone to this Linux desktop"],
+];
 
 function linuxDeviceKeyProviderSource({ cryptoVar, fsVar, pathVar }) {
   return [
@@ -70,8 +93,8 @@ function applyLinuxRemoteControlDeviceKeyPatch(source) {
     return source;
   }
 
-  const insertionNeedle = "var bV=(0,b.createRequire)(__filename),xV=`remote-control-device-key.node`";
-  if (!source.includes(insertionNeedle) || !source.includes(DEVICE_KEY_GUARD)) {
+  const insertionNeedle = source.match(DEVICE_KEY_REQUIRE_NEEDLE)?.[0] ?? null;
+  if (insertionNeedle == null || !source.includes(DEVICE_KEY_GUARD)) {
     console.warn("WARN: Could not find remote-control device-key bundle needles - skipping Linux remote-control device-key patch");
     return source;
   }
@@ -91,6 +114,12 @@ function applyLinuxRemoteControlPreserveConfigPatch(source) {
 
   const needle = "async function mV({codexHome:e,hostConfig:n,logger:r=t.Jr()}){if(n.kind===`local`)try{";
   if (!source.includes(needle)) {
+    if (
+      !source.includes("Removed remote_control from config before app-server start") &&
+      !source.includes("Failed to remove remote_control before app-server start")
+    ) {
+      return source;
+    }
     console.warn("WARN: Could not find remote-control config stripping needle - skipping Linux remote-control config patch");
     return source;
   }
@@ -99,17 +128,58 @@ function applyLinuxRemoteControlPreserveConfigPatch(source) {
 }
 
 function applyLinuxRemoteControlVisibilityPatch(source) {
-  if (source.includes(REMOTE_CONTROL_VISIBILITY_REPLACEMENT)) {
+  if (
+    source.includes(REMOTE_CONTROL_VISIBILITY_REPLACEMENT) ||
+    source.includes("remoteControlConnectionsState") &&
+      source.includes("navigator.userAgent.includes(`Linux`)")
+  ) {
     return source;
   }
   if (source.includes(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT)) {
     return source.replace(REMOTE_CONTROL_VISIBILITY_OLD_REPLACEMENT, REMOTE_CONTROL_VISIBILITY_REPLACEMENT);
   }
   if (!source.includes(REMOTE_CONTROL_VISIBILITY_NEEDLE)) {
-    console.warn("WARN: Could not find remote-control visibility gate - skipping Linux remote-control visibility patch");
-    return source;
+    if (!source.includes("remoteControlConnectionsState")) {
+      return source;
+    }
+
+    const settingsVisibilityMatch = source.match(REMOTE_CONTROL_SETTINGS_VISIBILITY_NEEDLE);
+    if (settingsVisibilityMatch == null) {
+      console.warn("WARN: Could not find remote-control visibility gate - skipping Linux remote-control visibility patch");
+      return source;
+    }
+
+    const [, functionName, stateVar, slingshotVar] = settingsVisibilityMatch;
+    return source.replace(
+      REMOTE_CONTROL_SETTINGS_VISIBILITY_NEEDLE,
+      `function ${functionName}({remoteControlConnectionsState:${stateVar},slingshotEnabled:${slingshotVar}}){let n=typeof navigator!=\`undefined\`&&navigator.userAgent.includes(\`Linux\`);return(n||${slingshotVar})&&(n||(${stateVar}?.available??!0))}`,
+    );
   }
   return source.replace(REMOTE_CONTROL_VISIBILITY_NEEDLE, REMOTE_CONTROL_VISIBILITY_REPLACEMENT);
+}
+
+function applyLinuxRemoteControlCopyPatch(source) {
+  const hasMacCopy = REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS.some(([macCopy]) =>
+    source.includes(macCopy),
+  );
+  if (!hasMacCopy && (source.includes("this Linux desktop") || source.includes("Linux apps"))) {
+    return source;
+  }
+
+  let patched = source;
+  let changed = false;
+  for (const [macCopy, linuxCopy] of REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS) {
+    if (patched.includes(macCopy)) {
+      patched = patched.split(macCopy).join(linuxCopy);
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    console.warn("WARN: Could not find remote-control Mac copy - skipping Linux remote-control copy patch");
+    return source;
+  }
+  return patched;
 }
 
 module.exports = [
@@ -130,15 +200,26 @@ module.exports = [
   {
     id: "linux-remote-control-visibility",
     phase: "webview-asset",
-    pattern: /^remote-control-connections-visibility-.*\.js$/,
+    pattern: /^(?:remote-control-connections-visibility|remote-connections-settings)-.*\.js$/,
     order: 20_120,
     ciPolicy: "optional",
     missingDescription: "remote-control connections visibility bundle",
     skipDescription: "Linux remote-control visibility patch",
     apply: applyLinuxRemoteControlVisibilityPatch,
   },
+  {
+    id: "linux-remote-control-copy",
+    phase: "webview-asset",
+    pattern: /^(?:codex-mobile-setup-flow|remote-connections-settings|use-codex-mobile-connected-settings)-.*\.js$/,
+    order: 20_130,
+    ciPolicy: "optional",
+    missingDescription: "remote-control settings or mobile setup bundle",
+    skipDescription: "Linux remote-control copy patch",
+    apply: applyLinuxRemoteControlCopyPatch,
+  },
 ];
 
 module.exports.applyLinuxRemoteControlDeviceKeyPatch = applyLinuxRemoteControlDeviceKeyPatch;
 module.exports.applyLinuxRemoteControlPreserveConfigPatch = applyLinuxRemoteControlPreserveConfigPatch;
 module.exports.applyLinuxRemoteControlVisibilityPatch = applyLinuxRemoteControlVisibilityPatch;
+module.exports.applyLinuxRemoteControlCopyPatch = applyLinuxRemoteControlCopyPatch;
