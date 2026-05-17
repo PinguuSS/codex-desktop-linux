@@ -3230,6 +3230,8 @@ test_user_local_prepare_build_repo_handles_relative_origin_url() {
     local workspace="$TMP_DIR/user-local-relative-origin"
     local origin_repo="$workspace/origin.git"
     local source_repo="$workspace/source"
+    local moved_source_repo="$workspace/source-moved"
+    local updater_repo="$workspace/updater"
     local managed_repo="$workspace/xdg-data/codex-desktop-linux/managed-repo"
     local install_env="$workspace/install.env"
 
@@ -3269,6 +3271,25 @@ EOF
 
         [ "$(cat "$MANAGED_REPO_DIR/relative.txt")" = "relative-origin" ] \
             || fail "Expected managed checkout contents from relative origin URL"
+        [ "$(git -C "$MANAGED_REPO_DIR" remote get-url origin)" = "$origin_repo" ] \
+            || fail "Expected first relative-origin checkout to store an absolute managed origin URL"
+
+        mv "$source_repo" "$moved_source_repo"
+        git clone "$origin_repo" "$updater_repo" >/dev/null 2>&1
+        git -C "$updater_repo" config user.name "Smoke Test"
+        git -C "$updater_repo" config user.email "smoke@example.com"
+        cat > "$updater_repo/relative.txt" <<'EOF'
+relative-origin-updated
+EOF
+        git -C "$updater_repo" commit -am "advance remote" >/dev/null
+        git -C "$updater_repo" push origin main >/dev/null
+
+        prepare_build_repo
+
+        [ "$(cat "$MANAGED_REPO_DIR/relative.txt")" = "relative-origin-updated" ] \
+            || fail "Expected managed checkout to update after source checkout moved away"
+        [ "$(git -C "$MANAGED_REPO_DIR" remote get-url origin)" = "$origin_repo" ] \
+            || fail "Expected moved-source update to keep using the absolute managed origin URL"
     )
 }
 

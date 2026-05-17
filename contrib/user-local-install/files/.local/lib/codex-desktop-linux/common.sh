@@ -91,38 +91,63 @@ repo_origin_url_is_relative_local() {
 resolve_repo_origin_url() {
     local origin_url="$1"
     local base_dir="$2"
-    local base_abs target_dir target_name
+    local base_abs candidate target_dir target_name
 
-    if ! repo_origin_url_is_relative_local "$origin_url" || [ ! -d "$base_dir" ]; then
+    if ! repo_origin_url_is_relative_local "$origin_url" || [ -z "$base_dir" ]; then
         printf '%s\n' "$origin_url"
         return 0
     fi
 
-    base_abs="$(cd "$base_dir" && pwd -P)" || {
-        printf '%s\n' "$origin_url"
-        return 0
-    }
-    target_dir="$(dirname "$origin_url")"
-    target_name="$(basename "$origin_url")"
-    if [ -d "$base_abs/$target_dir" ]; then
-        printf '%s/%s\n' "$(cd "$base_abs/$target_dir" && pwd -P)" "$target_name"
+    if [ -d "$base_dir" ]; then
+        base_abs="$(cd "$base_dir" && pwd -P)" || base_abs="$base_dir"
     else
-        printf '%s/%s\n' "$base_abs" "$origin_url"
+        base_abs="$base_dir"
     fi
+
+    candidate="$base_abs/$origin_url"
+    target_dir="$(dirname "$candidate")"
+    target_name="$(basename "$candidate")"
+    if [ -d "$target_dir" ]; then
+        printf '%s/%s\n' "$(cd "$target_dir" && pwd -P)" "$target_name"
+    else
+        printf '%s\n' "$candidate"
+    fi
+}
+
+managed_repo_origin_url() {
+    [ -d "$MANAGED_REPO_DIR/.git" ] || return 1
+    git -C "$MANAGED_REPO_DIR" remote get-url origin 2>/dev/null
 }
 
 repo_origin_url() {
     local origin_url=""
+    local resolved_url=""
+    local managed_origin_url=""
 
     if [ -n "${REPO_ORIGIN_URL:-}" ]; then
         origin_url="$REPO_ORIGIN_URL"
+        if repo_origin_url_is_relative_local "$origin_url"; then
+            resolved_url="$(resolve_repo_origin_url "$origin_url" "$SOURCE_REPO_DIR")"
+            if [ -e "$resolved_url" ]; then
+                printf '%s\n' "$resolved_url"
+                return 0
+            fi
+            managed_origin_url="$(managed_repo_origin_url 2>/dev/null || true)"
+            if [ -n "$managed_origin_url" ]; then
+                printf '%s\n' "$managed_origin_url"
+                return 0
+            fi
+            printf '%s\n' "$resolved_url"
+            return 0
+        fi
+        printf '%s\n' "$origin_url"
+        return 0
     elif [ -d "$SOURCE_REPO_DIR/.git" ]; then
-        origin_url="$(git -C "$SOURCE_REPO_DIR" remote get-url origin)" || return 1
-    else
-        return 1
+        git -C "$SOURCE_REPO_DIR" remote get-url origin
+        return $?
     fi
 
-    resolve_repo_origin_url "$origin_url" "$(repo_remote_query_dir)"
+    managed_repo_origin_url
 }
 
 repo_remote_query_dir() {
