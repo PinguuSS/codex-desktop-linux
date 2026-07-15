@@ -166,10 +166,9 @@ const {
   applyAutomationUpdateEagerToolPatch,
   applyLinuxAppSunsetPatch,
   applyLinuxBrowserUseAvailabilityPatch,
-  applyLinuxBrowserUseWebviewAttachRecoveryPatch,
   applyLinuxBrowserUseExternalAvailabilityPatch,
-  applyLinuxBrowserUseWebviewHostRecoveryPatch,
-  applyLinuxBrowserUseWebviewRemountStorePatch,
+  applyLinuxBrowserUseHiddenHostOwnershipPatch,
+  applyLinuxBrowserUseWebviewAttachRecoveryPatch,
   applyLinuxBrowserUseNonLocalNavigationPatch,
   applyLinuxChatSearchHydrationPatch,
   applyLinuxConfigWriteVersionConflictPatch,
@@ -929,6 +928,7 @@ test("default core patch descriptors are grouped and unique", () => {
     "linux-browser-use-non-local-navigation",
     "linux-browser-use-external-availability",
     "linux-browser-use-webview-attach-recovery",
+    "linux-browser-use-hidden-host-ownership",
     "linux-chat-search-hydration",
     "linux-file-manager",
     "linux-host-child-process-environment",
@@ -7928,12 +7928,15 @@ test("does not poison shared Browser recovery when a stale host timer fires", ()
   assert.equal(recoveryRef.current.attempt, 2);
 });
 
+const browserUseRecoveryStoreSource =
+  "function Af(e,t){return t??e}function Ef(e,t){return`${e}\\0${t}`}var Pf=class{webviews=new Map;snapshots=new Map;tabPersistenceStates=new Map;browserUseActiveTabKeys=new Set;browserUseViewportSizes=new Map;transferredWebviewKeys=new Set;registrationAttempts=new WeakMap;nextHostGeneration=0;getSnapshot(e,t){return this.snapshots.get(Ef(e,t))??null}setBrowserUseActive(e,...t){let n=typeof t[0]==`boolean`?Af(e,void 0):t[0],r=typeof t[0]==`boolean`?t[0]:t[1],i=Ef(e,n),a=this.browserUseActiveTabKeys.has(i);if(r){let t=`${e}\\0`;for(let e of Array.from(this.browserUseActiveTabKeys)){if(e===i||!e.startsWith(t))continue;this.browserUseActiveTabKeys.delete(e);let n=null}this.browserUseActiveTabKeys.add(i)}else this.browserUseActiveTabKeys.delete(i);return a}releaseBrowserUseTab(e,t){let n=Ef(e,t),r=this.browserUseActiveTabKeys.delete(n);return r}removeTab(e,t){let n=Ef(e,t),r=this.webviews.get(n);this.webviews.delete(n)}registerWebviewHost(e,t){return true}removeConversationTabs(e){let t=`${e}\\0`;for(let e of this.snapshots.keys())e.startsWith(t)&&this.snapshots.delete(e)}reassociateTabState(e,...t){let n=t[0],r=t[1],i=t[2],o=`transfer`,s=Ef(e,n),c=Ef(r,i);if(s===c||this.transferredWebviewKeys.has(o))return;if(this.webviews.has(c))return;let m=this.browserUseViewportSizes.get(s)??null,h=this.browserUseActiveTabKeys.delete(s);h&&this.browserUseActiveTabKeys.add(c);return m}disposeAll(){this.electronPageHandoff.disposeAll(),this.webviews.clear()}disposeWebviewHost(e,t,n,r){this.webviews.delete(n)}emitChange(){for(let e of this.listeners)e()}}";
+const browserUseRecoveryHostSource =
+  "function hT({adoptionLease:e,adoptedWebContentsId:t,bounds:n,browserTabId:r,children:i,conversationId:a,hostKind:o=`right-panel`,initialUrl:s,isVisible:c,persistedTabsEnabled:l=!1,scale:u,shouldBootstrapWhenHidden:d,shouldPaint:f,webviewRef:p,windowZoom:m}){let h=(0,vT.useRef)(null),g=(0,vT.useId)(),y=(0,vT.useRef)(Up.getMountGeneration(a,r)),x=(0,vT.useSyncExternalStore)(Up.subscribe,()=>Up.getCursorOverlayHost(a,r),()=>null);let S=c&&n!=null;return(0,vT.useLayoutEffect)(()=>{let _=Up.getWebview(a,r,s,{adoptionLease:e,adoptedWebContentsId:t,hostKind:o,persistedTabsEnabled:l});h.current=_,Up.syncElectronWebview(_,{bounds:n,isVisible:S,mountGeneration:y.current,scale:u,shouldBootstrap:d,shouldPaint:f,windowZoom:m},p,o)},[r,a,o,s,e,t,n,S,g,l,u,f,d,p,m]),x==null||i==null?null:createPortal(i,x)}";
+const browserUseHiddenHostSource =
+  "function f(e){return e}function A(e){let{browserUseTabIdsKey:n,conversationId:r}=e,c=e.isRouteOwner,B=e.visibleTabs;if(!c&&B.size>0)return null;let H=Symbol.for(`react.early_return_sentinel`);bb0:{let e=e=>!B.has(e);let a=n.split(`\\0`).map(f).filter(e);if(a.length===0){H=null;break bb0}return a}if(H!==Symbol.for(`react.early_return_sentinel`))return H}";
+
 test("patches the current Browser webview store and host atomically", () => {
-  const storeSource =
-    "function Af(e,t){return t??e}function Ef(e,t){return`${e}\\0${t}`}var Pf=class{webviews=new Map;snapshots=new Map;tabPersistenceStates=new Map;browserUseActiveTabKeys=new Set;browserUseViewportSizes=new Map;transferredWebviewKeys=new Set;registrationAttempts=new WeakMap;nextHostGeneration=0;getSnapshot(e,t){return this.snapshots.get(Ef(e,t))??null}setBrowserUseActive(e,...t){let n=typeof t[0]==`boolean`?Af(e,void 0):t[0],r=typeof t[0]==`boolean`?t[0]:t[1],i=Ef(e,n),a=this.browserUseActiveTabKeys.has(i);if(r){let t=`${e}\\0`;for(let e of Array.from(this.browserUseActiveTabKeys)){if(e===i||!e.startsWith(t))continue;this.browserUseActiveTabKeys.delete(e);let n=null}this.browserUseActiveTabKeys.add(i)}else this.browserUseActiveTabKeys.delete(i);return a}releaseBrowserUseTab(e,t){let n=Ef(e,t),r=this.browserUseActiveTabKeys.delete(n);return r}removeTab(e,t){let n=Ef(e,t),r=this.webviews.get(n);this.webviews.delete(n)}registerWebviewHost(e,t){return true}removeConversationTabs(e){let t=`${e}\\0`;for(let e of this.snapshots.keys())e.startsWith(t)&&this.snapshots.delete(e)}reassociateTabState(e,...t){let n=t[0],r=t[1],i=t[2],o=`transfer`,s=Ef(e,n),c=Ef(r,i);if(s===c||this.transferredWebviewKeys.has(o))return;if(this.webviews.has(c))return;let m=this.browserUseViewportSizes.get(s)??null,h=this.browserUseActiveTabKeys.delete(s);h&&this.browserUseActiveTabKeys.add(c);return m}disposeAll(){this.electronPageHandoff.disposeAll(),this.webviews.clear()}disposeWebviewHost(e,t,n,r){this.webviews.delete(n)}emitChange(){for(let e of this.listeners)e()}}";
-  const hostSource =
-    "function hT({adoptionLease:e,adoptedWebContentsId:t,bounds:n,browserTabId:r,children:i,conversationId:a,hostKind:o=`right-panel`,initialUrl:s,isVisible:c,persistedTabsEnabled:l=!1,scale:u,shouldBootstrapWhenHidden:d,shouldPaint:f,webviewRef:p,windowZoom:m}){let h=(0,vT.useRef)(null),g=(0,vT.useId)(),y=(0,vT.useRef)(Up.getMountGeneration(a,r)),x=(0,vT.useSyncExternalStore)(Up.subscribe,()=>Up.getCursorOverlayHost(a,r),()=>null);let S=c&&n!=null;return(0,vT.useLayoutEffect)(()=>{let _=Up.getWebview(a,r,s,{adoptionLease:e,adoptedWebContentsId:t,hostKind:o,persistedTabsEnabled:l});h.current=_,Up.syncElectronWebview(_,{bounds:n,isVisible:S,mountGeneration:y.current,scale:u,shouldBootstrap:d,shouldPaint:f,windowZoom:m},p,o)},[r,a,o,s,e,t,n,S,g,l,u,f,d,p,m]),x==null||i==null?null:createPortal(i,x)}";
-  const source = `${storeSource};${hostSource}`;
+  const source = `${browserUseRecoveryStoreSource};${browserUseRecoveryHostSource}`;
   const patched = applyPatchTwice(
     applyLinuxBrowserUseWebviewAttachRecoveryPatch,
     source,
@@ -8161,17 +8164,76 @@ test("patches the current Browser webview store and host atomically", () => {
   assert.equal(store.linuxBrowserUseRecoveryStates.size, 0);
 });
 
-test("Browser webview recovery descriptor targets the current combined renderer chunk", () => {
-  const descriptor = require("./patches/core/all-linux/webview/browser-use-attach-recovery/patch.js");
+test("Browser webview recovery descriptors target the current renderer chunks", () => {
+  const descriptors = require("./patches/core/all-linux/webview/browser-use-attach-recovery/patch.js");
+  const recoveryDescriptor = descriptors.find(
+    (descriptor) => descriptor.id === "linux-browser-use-webview-attach-recovery",
+  );
+  const hiddenHostDescriptor = descriptors.find(
+    (descriptor) => descriptor.id === "linux-browser-use-hidden-host-ownership",
+  );
 
+  assert.ok(recoveryDescriptor);
+  assert.ok(hiddenHostDescriptor);
   assert.match(
-    "app-initial~app-main~onboarding-page-current.js",
-    descriptor.pattern,
+    "app-initial~app-main~onboarding-page-CIkoyvFz.js",
+    recoveryDescriptor.pattern,
   );
   assert.doesNotMatch(
     "app-initial~artifact-tab-content.electron~app-main~new-thread-panel-page-current.js",
-    descriptor.pattern,
+    recoveryDescriptor.pattern,
   );
+  assert.match(
+    "browser-sidebar-hidden-browser-use-webview-host-Dv56miJM.js",
+    hiddenHostDescriptor.pattern,
+  );
+  assert.doesNotMatch(
+    "app-initial~app-main~onboarding-page-current.js",
+    hiddenHostDescriptor.pattern,
+  );
+});
+
+test("current Browser webview assets apply both recovery descriptors without report drift", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-browser-webview-current-"));
+  try {
+    const buildDir = path.join(tempRoot, ".vite", "build");
+    const assetsDir = path.join(tempRoot, "webview", "assets");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(path.join(buildDir, "main.js"), "module.exports={}");
+    fs.writeFileSync(
+      path.join(assetsDir, "app-initial~app-main~onboarding-page-CIkoyvFz.js"),
+      `${browserUseRecoveryStoreSource};${browserUseRecoveryHostSource}`,
+    );
+    fs.writeFileSync(
+      path.join(assetsDir, "browser-sidebar-hidden-browser-use-webview-host-DbLBblbO.js"),
+      browserUseHiddenHostSource,
+    );
+
+    const report = createPatchReport();
+    const corePatchRoot = path.join(
+      __dirname,
+      "patches",
+      "core",
+      "all-linux",
+      "webview",
+      "browser-use-attach-recovery",
+    );
+    captureWarns(() => patchExtractedApp(tempRoot, { report, corePatchRoot }));
+
+    for (const patchName of [
+      "linux-browser-use-webview-attach-recovery",
+      "linux-browser-use-hidden-host-ownership",
+    ]) {
+      assert.equal(
+        report.patches.find((patch) => patch.name === patchName)?.status,
+        "applied",
+      );
+      assert.ok(!optionalDriftFromReport(report).some((patch) => patch.name === patchName));
+    }
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("Browser webview recovery stays fail-soft when only the host seam matches", () => {
@@ -8189,6 +8251,49 @@ test("Browser webview recovery stays fail-soft when only the host seam matches",
     console.warn = originalWarn;
   }
   assert.ok(warnings.some((message) => message.includes("did not patch atomically")));
+});
+
+test("mounts inactive Browser Use hosts when another conversation owns the visible panel", () => {
+  const patched = applyPatchTwice(
+    applyLinuxBrowserUseHiddenHostOwnershipPatch,
+    browserUseHiddenHostSource,
+  );
+
+  assert.match(
+    patched,
+    /if\(!c&&B\.size>0&&n\.split\(`\\0`\)\.map\(f\)\.every\(codexLinuxBrowserUseTabId=>B\.has\(codexLinuxBrowserUseTabId\)\)\)return null/,
+  );
+  assert.doesNotThrow(() => new vm.Script(patched));
+
+  const mount = vm.runInNewContext(`${patched};A`);
+  assert.deepEqual(
+    Array.from(
+      mount({
+        browserUseTabIdsKey: "target-tab",
+        isRouteOwner: false,
+        visibleTabs: new Set(["other-conversation-tab"]),
+      }),
+    ),
+    ["target-tab"],
+  );
+  assert.equal(
+    mount({
+      browserUseTabIdsKey: "target-tab",
+      isRouteOwner: false,
+      visibleTabs: new Set(["target-tab"]),
+    }),
+    null,
+  );
+  assert.deepEqual(
+    Array.from(
+      mount({
+        browserUseTabIdsKey: "visible-tab\0hidden-tab",
+        isRouteOwner: false,
+        visibleTabs: new Set(["visible-tab"]),
+      }),
+    ),
+    ["hidden-tab"],
+  );
 });
 
 test("hydrates local chat search results before navigating", () => {

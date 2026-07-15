@@ -942,6 +942,65 @@ function applyLinuxBrowserUseWebviewHostRecoveryPatch(currentSource) {
   );
 }
 
+function applyLinuxBrowserUseHiddenHostOwnershipPatch(currentSource) {
+  const keyMatch = /browserUseTabIdsKey:([A-Za-z_$][\w$]*)/u.exec(currentSource);
+  if (keyMatch == null) {
+    return currentSource;
+  }
+
+  const browserUseTabIdsKeyVar = keyMatch[1];
+  const componentStartIndex = currentSource.lastIndexOf("function ", keyMatch.index);
+  const componentOpenIndex = currentSource.indexOf("{", componentStartIndex);
+  const componentCloseIndex =
+    componentOpenIndex === -1
+      ? -1
+      : findMatchingBrace(currentSource, componentOpenIndex);
+  const componentSource =
+    componentStartIndex === -1 || componentCloseIndex === -1
+      ? ""
+      : currentSource.slice(componentStartIndex, componentCloseIndex + 1);
+  const parsedTabIdsMatch = new RegExp(
+    `${escapeRegExp(browserUseTabIdsKeyVar)}\\.split\\(\`\\\\0\`\\)\\.map\\(([A-Za-z_$][\\w$]*)\\)\\.filter`,
+    "u",
+  ).exec(componentSource);
+  const guardMatch =
+    /if\(!([A-Za-z_$][\w$]*)&&([A-Za-z_$][\w$]*)\.size>0(?:&&([A-Za-z_$][\w$]*)\.split\(`\\0`\)\.map\(([A-Za-z_$][\w$]*)\)\.every\(([A-Za-z_$][\w$]*)=>\2\.has\(\5\)\))?\)return null;/u.exec(
+      componentSource,
+    );
+
+  if (
+    guardMatch != null &&
+    guardMatch[3] === browserUseTabIdsKeyVar &&
+    guardMatch[4] === parsedTabIdsMatch?.[1]
+  ) {
+    return currentSource;
+  }
+  if (
+    componentStartIndex === -1 ||
+    componentCloseIndex === -1 ||
+    parsedTabIdsMatch == null ||
+    guardMatch == null
+  ) {
+    console.warn(
+      "WARN: Could not find hidden Browser Use host ownership guard — skipping Linux inactive-route host patch",
+    );
+    return currentSource;
+  }
+
+  const [guardNeedle, routeOwnerVar, visibleTabIdsVar] = guardMatch;
+  const parseBrowserTabIdVar = parsedTabIdsMatch[1];
+  const visibleTabIdVar = "codexLinuxBrowserUseTabId";
+  const guardPatch =
+    `if(!${routeOwnerVar}&&${visibleTabIdsVar}.size>0&&` +
+    `${browserUseTabIdsKeyVar}.split(\`\\0\`).map(${parseBrowserTabIdVar}).every(` +
+    `${visibleTabIdVar}=>${visibleTabIdsVar}.has(${visibleTabIdVar})))return null;`;
+  const patchedComponent = componentSource.replace(guardNeedle, guardPatch);
+  return (
+    `${currentSource.slice(0, componentStartIndex)}${patchedComponent}` +
+    `${currentSource.slice(componentCloseIndex + 1)}`
+  );
+}
+
 function applyLinuxBrowserUseWebviewAttachRecoveryPatch(currentSource) {
   const hasHostPatch = (source) =>
     source.includes("function codexLinuxWatchBrowserWebviewAttachment(");
@@ -2311,6 +2370,7 @@ module.exports = {
   applyLinuxBrowserUseAvailabilityPatch,
   applyLinuxBrowserUseWebviewAttachRecoveryPatch,
   applyLinuxBrowserUseExternalAvailabilityPatch,
+  applyLinuxBrowserUseHiddenHostOwnershipPatch,
   applyLinuxBrowserUseNonLocalNavigationPatch,
   applyLinuxBrowserUseWebviewHostRecoveryPatch,
   applyLinuxBrowserUseWebviewRemountStorePatch,
